@@ -1,0 +1,758 @@
+<!DOCTYPE HTML>
+<html>
+	<head>
+		<meta content="text/html;charset=utf-8" http-equiv="Content-Type">
+		<meta content="utf-8" http-equiv="encoding">
+		<link rel="stylesheet" href="VisualCSS.css">
+	</head>
+	<body>
+		<form>
+			<input type="text" id="soundSrc" placeholder="Paste Soundcloud URL here">
+			<button id="retrieve" ><i class="icon-play"></i></button>
+			<img src="powered_by_soundcloud.png" id="logo"></img>
+		</form>
+		<br>
+		<div id="controlPanel">
+		<div id="trackInfoPanel">
+			<img id="infoImage" src="">
+			<div id="infoArtist"></div>
+			<div id="infoTrack"></div>
+		</div>
+		<div id="playerControls">
+			<audio id="player" controls="" autoplay="" preload autobuffer></audio>
+		</div>
+		</div>
+		<div id="stars"></div>
+		<div id="container">
+			<div id="1" class="high1" style="left: 50px; top: 350px"></div>
+			<div id="2" class="high2" style="left: 50px; top: 350px"></div>
+			<div id="3" class="high3" style="left: 50px; top: 350px"></div>
+			<div id="4" class="high4" style="left: 50px; top: 350px"></div>
+		</div>
+		<script src="http://ajax.googleapis.com/ajax/libs/jquery/1.11.3/jquery.min.js"></script>
+		<script src="http://connect.soundcloud.com/sdk.js"></script>
+		<script type="text/javascript">
+			
+			var high1 = document.getElementById("1");
+			var high2 = document.getElementById("2");
+			var high3 = document.getElementById("3");
+			var high4 = document.getElementById("4");
+			
+			var screenWidth = window.innerWidth;
+			var screenHeight = window.innerHeight;
+			
+			var stars = [];
+			
+			var powScale = 0;
+			
+			var container = document.getElementById("stars");
+			
+			var leftOffset = screenWidth / 2;
+			var topOffset = ((screenHeight + 210) / 2);
+			
+			screenHeight *= 0.9;
+			
+			var ph1 = -1;
+			var ph2 = -1;
+			var ph3 = -1;
+			var peakVol = -1;
+			
+			var ch1 = 0;
+			var ch2 = 240;
+			var ch3 = 120;
+			var ch4 = 60;
+			
+			var deg = 0;
+			
+			var h1rgb = "rgb(0, 0, 255)";
+			var h2rgb = "rgb(0, 255, 0)";
+			var h3rgb = "rgb(255, 0, 0)";
+			var h4rgb = "rgb(255, 255, 0)";
+			
+			var player =  document.getElementById('player');
+			var uiUpdater = new UiUpdater();
+			var loader = new SoundcloudLoader(player, uiUpdater);
+			var audioSource = new SoundCloudAudioSource(player);
+			
+			var songUrl;
+			
+			songUrl = localStorage.getItem("url");
+			
+			playSong(songUrl);
+			
+			var avgHigh = 0;
+			var iter = 0;
+			
+			var audioStop = true;
+			
+			var time = 0;
+			
+			var sfCanvas = document.createElement('canvas');
+			var sfCtx = sfCanvas.getContext("2d");
+			sfCanvas.setAttribute('style', 'position: absolute; z-index: 5');
+			
+			container.appendChild(sfCanvas);
+			
+			sfCanvas.width = window.innerWidth;
+            sfCanvas.height = window.innerHeight;
+            
+            sfCtx.translate(window.innerWidth/2,window.innerHeight/2);
+
+			makeStarArray();
+			
+			var retrieve = document.getElementById("retrieve");
+			
+			retrieve.onclick = function() {
+				localStorage.setItem("url", document.getElementById("soundSrc").value);
+				songUrl = localStorage.getItem("url");
+				playSong(songUrl);
+			}
+			
+			onWindowResize();
+			animate();
+			draw();
+
+			window.addEventListener('resize', onWindowResize, false);
+			
+			function rotate(div, speed) {
+				div.style.webkitTransform = 'rotate('+((speed * 100) + 0.1 + deg)+'deg)'; 
+				div.style.mozTransform    = 'rotate('+((speed * 100) + 0.1 + deg)+'deg)'; 
+				div.style.msTransform     = 'rotate('+((speed * 100) + 0.1 + deg)+'deg)'; 
+				div.style.oTransform      = 'rotate('+((speed * 100) + 0.1 + deg)+'deg)'; 
+				div.style.transform       = 'rotate('+((speed * 100) + 0.1 + deg)+'deg)';
+				
+				deg += (speed * 100) + 0.1;
+			}
+			
+			function SoundCloudAudioSource(p) {
+				var player = p;
+				var self = this;
+				var analyser;
+				var audioCtx = new (window.AudioContext || window.webkitAudioContext);
+				analyser = audioCtx.createAnalyser();
+				analyser.fftSize = 256;
+				player.crossOrigin = "anonymous";
+				var source = audioCtx.createMediaElementSource(player);
+				source.connect(analyser);
+				analyser.connect(audioCtx.destination);
+				var sampleAudioStream = function() {
+					analyser.getByteFrequencyData(self.streamData);
+					var total = 0;
+					for (var i = 0; i < 80; i++) {
+						total += self.streamData[i];
+					}
+					self.volume = total;
+				};
+				setInterval(sampleAudioStream, 20);
+				
+				this.volume = 0;
+				this.streamData = new Uint8Array(128);
+				this.playStream = function(streamUrl) {
+					player.setAttribute('src', streamUrl);
+					player.play();
+				}
+			};
+			
+			function onWindowResize() {
+				screenWidth = window.innerWidth;
+				screenHeight = window.innerHeight;
+			
+				leftOffset = screenWidth / 2;
+				topOffset = ((screenHeight + 210) / 2);
+			
+				screenHeight *= 0.9;
+
+				sfCanvas.width = window.innerWidth;
+				sfCanvas.height = window.innerHeight;
+				sfCtx.translate(window.innerWidth/2,window.innerHeight/2);
+				
+				makeStarArray();
+			}
+			
+			function playSong(trackUrl) {
+				loader.loadStream(trackUrl,
+				function() {
+					uiUpdater.clearInfoPanel();
+					audioSource.playStream(loader.streamUrl());
+					uiUpdater.update(loader);
+					audioStop = false;
+				},
+				function() {
+					console.log("Error loading track (malformed URL?)");
+				});
+			}
+			
+			function Star(x, y, starSize, ctx) {
+				this.x = x;
+				this.y = y;
+				this.angle = Math.atan(Math.abs(y)/Math.abs(x));
+				this.starSize = starSize;
+				this.ctx = ctx;
+				this.high = 0;
+				
+				this.drawStar = function() {
+					var distanceFromCentre = Math.sqrt(Math.pow(this.x, 2) + Math.pow(this.y, 2));
+					var brightness = 200 + Math.min(Math.round(this.high * 5), 55);
+					this.ctx.lineWidth= 0.5 + distanceFromCentre/2000 * Math.max(this.starSize/2, 1);
+					this.ctx.strokeStyle='rgba(' + brightness + ', ' + brightness + ', ' + brightness + ', 1)';
+					this.ctx.beginPath();
+					this.ctx.moveTo(this.x,this.y);
+					var lengthFactor = 1 + Math.min(Math.pow(distanceFromCentre,2)/30000 * Math.pow(audioSource.volume, 2)/100000000, distanceFromCentre);
+					var toX = Math.cos(this.angle) * -lengthFactor;
+					var toY = Math.sin(this.angle) * -lengthFactor;
+					toX *= this.x > 0 ? 1 : -1;
+					toY *= this.y > 0 ? 1 : -1;
+					this.ctx.lineTo(this.x + toX, this.y + toY);
+					this.ctx.stroke();
+					this.ctx.closePath();
+
+					var speed = Math.pow(lengthFactor/5 * this.starSize, 2);
+					this.high -= Math.max(this.high - 0.0001, 0);
+					if (speed > this.high) {
+						this.high = speed;
+					}
+					var dX = Math.cos(this.angle) * this.high;
+					var dY = Math.sin(this.angle) * this.high;
+					this.x += this.x > 0 ? dX : -dX;
+					this.y += this.y > 0 ? dY : -dY;
+
+					var limitY = window.innerHeight/2 + 500;
+					var limitX = window.innerWidth/2 + 500;
+					if ((this.y > limitY || this.y < -limitY) || (this.x > limitX || this.x < -limitX)) {
+						this.x = (Math.random() - 0.5) * window.innerWidth/3;
+						this.y = (Math.random() - 0.5) * window.innerHeight/3;
+						this.angle = Math.atan(Math.abs(this.y)/Math.abs(this.x));
+					}
+				};
+			}
+
+			function makeStarArray() {
+				var x, y, starSize;
+				stars = [];
+				var limit = window.innerWidth / 15;
+				for (var i = 0; i < limit; i ++) {
+					x = (Math.random() - 0.5) * window.innerWidth;
+					y = (Math.random() - 0.5) * window.innerHeight;
+					starSize = (Math.random()+0.1)*3;
+					stars.push(new Star(x, y, starSize, sfCtx));
+				}
+			};
+			
+			function SoundcloudLoader(p, uiUpdater) {
+				var self = this;
+				var client_id = "6a176e89d34858d54b2ec21d7165a919";
+				this.sound = {};
+				this.streamUrl = "";
+				this.errorMessage = "";
+				this.player = p;
+				this.uiUpdater = uiUpdater;
+
+				this.loadStream = function(track_url, successCallback, errorCallback) {
+					SC.initialize({
+						client_id: client_id
+					});
+					SC.get('http://api.soundcloud.com/resolve', { url: track_url }, function(sound) {
+						if (sound.errors) {
+							self.errorMessage = "";
+							for (var i = 0; i < sound.errors.length; i++) {
+								self.errorMessage += sound.errors[i].error_message + '<br>';
+							}
+							self.errorMessage += 'Make sure the URL has the correct format: https://soundcloud.com/user/title-of-the-track';
+							errorCallback();
+						} else {
+
+							if (sound.kind=="playlist") {
+								self.sound = sound;
+								self.streamPlaylistIndex = 0;
+								self.streamUrl = function(){
+									return sound.tracks[self.streamPlaylistIndex].stream_url + '?client_id=' + client_id;
+								}
+								successCallback();
+							} else {
+								self.sound = sound;
+								self.streamUrl = function(){ return sound.stream_url + '?client_id=' + client_id; };
+								successCallback();
+							}
+						}
+					});
+				};
+
+				this.directStream = function(direction) {
+					if (direction=='toggle') {
+						if (this.player.paused) {
+							this.player.play();
+						} else {
+							this.player.pause();
+						}
+					}
+					else if (this.sound.kind=="playlist") {
+						if (direction=='coasting') {
+							this.streamPlaylistIndex++;
+						} else if (direction=='forward') {
+							if( this.streamPlaylistIndex>=this.sound.track_count-1) this.streamPlaylistIndex = 0;
+							else this.streamPlaylistIndex++;
+						} else {
+							if (this.streamPlaylistIndex<=0) this.streamPlaylistIndex = this.sound.track_count-1;
+							else this.streamPlaylistIndex--;
+						}
+						if (this.streamPlaylistIndex>=0 && this.streamPlaylistIndex<=this.sound.track_count-1) {
+						   this.player.setAttribute('src',this.streamUrl());
+						   this.uiUpdater.update(this);
+						   this.player.play();
+						}
+					}
+				}
+			};
+			
+			function UiUpdater() {
+				var controlPanel = document.getElementById('controlPanel');
+				var trackInfoPanel = document.getElementById('trackInfoPanel');
+				var infoImage = document.getElementById('infoImage');
+				var infoArtist = document.getElementById('infoArtist');
+				var infoTrack = document.getElementById('infoTrack');
+				var messageBox = document.getElementById('messageBox');
+
+				this.clearInfoPanel = function() {
+					infoArtist.innerHTML = "";
+					infoTrack.innerHTML = "";
+					trackInfoPanel.className = 'hidden';
+				};
+				this.update = function(loader) {
+					var artistLink = document.createElement('a');
+					artistLink.setAttribute('href', loader.sound.user.permalink_url);
+					artistLink.innerHTML = loader.sound.user.username;
+					var trackLink = document.createElement('a');
+					trackLink.setAttribute('href', loader.sound.permalink_url);
+
+					if(loader.sound.kind=="playlist"){
+						trackLink.innerHTML = "<p>" + loader.sound.tracks[loader.streamPlaylistIndex].title + "</p>" + "<p>"+loader.sound.title+"</p>";
+					}else{
+						trackLink.innerHTML = loader.sound.title;
+					}
+
+					var image = loader.sound.artwork_url ? loader.sound.artwork_url : loader.sound.user.avatar_url;
+					infoImage.setAttribute('src', image);
+
+					infoArtist.innerHTML = '';
+					infoArtist.appendChild(artistLink);
+
+					infoTrack.innerHTML = '';
+					infoTrack.appendChild(trackLink);
+
+					trackInfoPanel.className = '';
+
+					var trackToken = loader.sound.permalink_url.substr(22);
+					window.location = '#' + trackToken;
+				};
+				this.toggleControlPanel = function() {
+					if (controlPanel.className.indexOf('hidden') === 0) {
+						controlPanel.className = '';
+					} else {
+						controlPanel.className = 'hidden';
+					}
+				};
+				this.displayMessage = function(title, message) {
+					messageBox.innerHTML = '';
+
+					var titleElement = document.createElement('h3');
+					titleElement.innerHTML = title;
+
+					var messageElement = document.createElement('p');
+					messageElement.innerHTML = message;
+
+					var closeButton = document.createElement('a');
+					closeButton.setAttribute('href', '#');
+					closeButton.innerHTML = 'close';
+					closeButton.addEventListener('click', function(e) {
+						e.preventDefault();
+						messageBox.className = 'hidden';
+					});
+
+					messageBox.className = '';
+					messageBox.appendChild(titleElement);
+					messageBox.appendChild(messageElement);
+					messageBox.appendChild(closeButton);
+				};
+			};
+			
+			function draw() {
+				sfCanvas.height = window.innerHeight;
+				sfCanvas.width = window.innerWidth;
+				sfCtx.translate(window.innerWidth/2,window.innerHeight/2);
+				sfCtx.clearRect(-window.innerWidth/2, -window.innerHeight/2, window.innerWidth, window.innerHeight);
+
+				stars.forEach(function(star) {
+					star.drawStar();
+				});
+				
+				requestAnimationFrame(draw);
+			};
+			
+			function getAverage(array) {
+				var avg = 0;
+				
+				for (var i = 0 ; i < array.length ; i++) {
+					avg += array[i];
+				}
+				
+				avg /= array.length;
+				
+				return avg;
+			}
+			
+			function update() {
+			}
+					
+			function render() {
+				if (audioStop) {
+					return;
+				}
+				
+				var frequencyData = audioSource.streamData;
+				var length = frequencyData.length;
+				
+				var highVol1 = -1;
+				var highVol2 = -1;
+				var highVol3 = -1;
+				var highVol4 = -1;
+				
+				var sum = 0;
+				
+				var div = 20;
+				
+				var l = Math.floor(length / div);
+				
+				var lowVal = 256;
+				
+				binIter:
+				for (var i = 0 ; i < length ; i++) {
+					for (var j = 1 ; j <= div ; j++) {
+						if (frequencyData[i] > 0 && frequencyData[i] < lowVal) {
+							lowVal = frequencyData[i];
+						}
+						if (i < (j*l)) {
+							sum += frequencyData[i];
+							continue binIter;
+						}
+						if (i == (j*l)) {
+							sum /= l;
+							if (sum > highVol1) {
+								highVol4 = highVol3;
+								highVol3 = highVol2;
+								highVol2 = highVol1;
+								highVol1 = sum;
+							} else if (sum > highVol2) {
+								highVol4 = highVol3;
+								highVol3 = highVol2;
+								highVol2 = sum;
+							} else if (sum > highVol3) {
+								highVol4 = highVol3;
+								highVol3 = sum;
+							} else if (sum > highVol4) {
+								highVol4 = sum;
+							}
+							sum = 0;
+						}
+					}
+				}
+				
+				avgHigh += highVol1;
+				iter++;
+				
+				if (highVol1 + highVol2 + highVol3 > peakVol) {
+					peakVol = highVol1 + highVol2 + highVol3;
+				}
+				
+				totalVolScaleFactor = (highVol1 + highVol2 + highVol3) / peakVol;
+				
+				var sat = Math.pow(totalVolScaleFactor, 8);
+				var light = Math.pow(totalVolScaleFactor, 8);
+				
+				if (sat > 1) {
+					sat = 1;
+					light = 1;
+				}
+				
+				var colorChange = false;
+				
+				enlargeValue1 = screenHeight / 10;
+				enlargeValue2 = screenHeight / 30;
+				
+				highVol1 += enlargeValue1;
+				highVol2 += enlargeValue2;
+				
+				multF1 = 1;
+				multF2 = 1;
+				multF3 = 1;
+				
+				if (highVol1 - enlargeValue1 <= ((avgHigh / iter) * 0.85)) {
+					highVol1 = 0;
+					multF1 = 0;
+					high1.style.borderStyle = "none";
+				} else {
+					high1.style.borderStyle = "solid";
+				}
+				if (highVol2 - enlargeValue2 <= ((avgHigh / iter) * 0.85)) {
+					highVol2 = 0;
+					multF2 = 0;
+					high2.style.borderStyle = "none";
+				} else {
+					high2.style.borderStyle = "solid";
+				}
+				if (highVol3 <= ((avgHigh / iter) * 0.85)) {
+					highVol3 = 0;
+					multF3 = 0;
+					high3.style.borderStyle = "none";
+				} else {
+					high3.style.borderStyle = "solid";
+				}
+				
+				if (Math.abs(highVol1 - ph1) > 20 || Math.abs(highVol2 - ph2) > 10 || Math.abs(highVol3 - ph3) > 4 || ((lowVal * 3) > highVol3 && highVol3 != 0)) {
+					colorChange = true;
+					powScale = highVol1 / 4;
+				}
+				
+				if (powScale > 0) {
+					powScale -= highVol1 / 32;
+				}
+				
+				diff1 = highVol1 - ph1;
+				diff2 = highVol2 - ph2;
+				diff3 = highVol3 - ph3;
+			
+				ph1 = highVol1;
+				ph2 = highVol2;
+				ph3 = highVol3;
+				
+				var origVol4 = highVol4;
+				
+				scaleFactor = screenHeight / 2;
+				
+				highVol1 += Math.pow(highVol1, 0.9);
+				highVol2 += Math.pow(highVol2, 0.5);
+				highVol3 += Math.pow(highVol3, 0.2);
+				
+				// highVol1 += scaleFactor * multF1;
+// 				highVol2 += (scaleFactor / 2) * multF2;
+// 				highVol3 += (scaleFactor / 4) * multF3;
+// 				highVol4 += (scaleFactor / 8) * 0.5;
+
+				highVol1 += powScale;
+
+				highVol1 += Math.abs(diff1);
+				highVol2 += Math.abs(diff2);
+				highVol3 += Math.abs(diff3);
+				
+				highVol4 *= 0.75;
+				
+				highVol1 *= Math.pow(totalVolScaleFactor, 2);
+				highVol2 *= Math.pow(totalVolScaleFactor, 3);
+				highVol3 *= Math.pow(totalVolScaleFactor, 4);
+				highVol4 *= Math.pow(totalVolScaleFactor, 2);
+				
+				if (colorChange) {
+				
+					var keyHue = Math.floor(Math.random() * (361));
+					
+					var colors = getTetrad(keyHue);
+					
+					ch1 = keyHue;
+					ch2 = colors[1];
+					ch3 = colors[0];
+					ch4 = colors[2];
+				}
+				
+				high1.style.backgroundColor = changeSaturation2(ch1, sat, light);
+				high1.style.height = highVol1 + "px";
+				high1.style.width = highVol1 + "px";
+				high1.style.left = (leftOffset - (highVol1 / 2)) + "px";
+				high1.style.top = (topOffset - (highVol1 / 2)) + "px";
+				
+				high2.style.backgroundColor = changeSaturation2(ch2, sat, light);
+				high2.style.height = highVol2 + "px";
+				high2.style.width = highVol2 + "px";
+				high2.style.left = (leftOffset - (highVol2 / 2)) + "px";
+				high2.style.top = (topOffset - (highVol2 / 2)) + "px";
+				
+				high3.style.backgroundColor = changeSaturation2(ch3, sat, light);
+				high3.style.height = highVol3 + "px";
+				high3.style.width = highVol3 + "px";
+				high3.style.left = (leftOffset - (highVol3 / 2)) + "px";
+				high3.style.top = (topOffset - (highVol3 / 2)) + "px";
+				
+				high4.style.backgroundColor = changeSaturation2(ch4, sat, light);
+				high4.style.height = highVol4 + "px";
+				high4.style.width = highVol4 + "px";
+				high4.style.left = (leftOffset - (highVol4 / 2)) + "px";
+				high4.style.top = (topOffset - (highVol4 / 2)) + "px";
+				
+				rotate(high4, Math.pow((origVol4 / 256), 4));
+				
+				console.log(ch1 + ", " + ch2 + ", " + ch3 + ", " + ch4);
+			}
+			
+			function getTetrad(deg) {
+				var ana1 = deg + 60;
+				
+				if (ana1 > 360) {
+					ana1 = ana1 - 360;
+				}
+				
+				var comp = deg + 180;
+				
+				if (comp > 360) {
+					comp = comp - 360;
+				}
+				
+				var ana2 = deg + 240;
+				
+				if (ana2 > 360) {
+					ana2 = ana2 - 360;
+				}
+				
+				return [ana1, comp, ana2];
+			}
+			
+			function normalize(i, min, max) {
+				return ((i - min) / (max - min));
+			}
+			
+			function animate() {
+				requestAnimationFrame(animate);
+				render();
+				update();
+			}
+			
+			function changeSaturation(rgb, sat, light) {
+				var hsl = rgbToHSL(rgb);
+				hsl.s = sat;
+				hsl.l = light;
+				return hslToRGB(hsl);
+			}
+			
+			function changeSaturation2(hue, sat, light) {
+				var hsl = {
+							h: hue,
+							s: sat,
+							l: light
+						  }
+				return hslToRGB(hsl);
+			}
+			
+			function rgbHex(rgb) {
+				var r = parseInt(rgb.substring(4, rgb.indexOf(",")));
+				var i = rgb.indexOf(",");
+				var g = parseInt(rgb.substring(i + 2, rgb.indexOf(",", i + 2)));
+				i = rgb.indexOf(",", i + 2);
+				var b = parseInt(rgb.substring(i + 2, rgb.indexOf(")")));
+				
+				return rgbToHex(r, g, b);
+			}
+
+			function rgbToHSL(rgb) {
+				// strip the leading # if it's there
+				rgb = rgb.replace(/^\s*#|\s*$/g, '');
+
+				// convert 3 char codes to 6, e.g. `E0F` --> `EE00FF`
+				if(rgb.length == 3){
+					rgb = rgb.replace(/(.)/g, '$1$1');
+				}
+
+				var r = parseInt(rgb.substr(0, 2), 16) / 255,
+					g = parseInt(rgb.substr(2, 2), 16) / 255,
+					b = parseInt(rgb.substr(4, 2), 16) / 255,
+					cMax = Math.max(r, g, b),
+					cMin = Math.min(r, g, b),
+					delta = cMax - cMin,
+					l = (cMax + cMin) / 2,
+					h = 0,
+					s = 0;
+
+				if (delta == 0) {
+					h = 0;
+				}
+				else if (cMax == r) {
+					h = 60 * (((g - b) / delta) % 6);
+				}
+				else if (cMax == g) {
+					h = 60 * (((b - r) / delta) + 2);
+				}
+				else {
+					h = 60 * (((r - g) / delta) + 4);
+				}
+
+				if (delta == 0) {
+					s = 0;
+				}
+				else {
+					s = (delta/(1-Math.abs(2*l - 1)))
+				}
+
+				return {
+					h: h,
+					s: s,
+					l: l
+				}
+			}
+			
+			function hslToRGB(hsl) {
+				var h = hsl.h,
+					s = hsl.s,
+					l = hsl.l,
+					c = (1 - Math.abs(2*l - 1)) * s,
+					x = c * ( 1 - Math.abs((h / 60 ) % 2 - 1 )),
+					m = l - c/ 2,
+					r, g, b;
+
+				if (h < 60) {
+					r = c;
+					g = x;
+					b = 0;
+				}
+				else if (h < 120) {
+					r = x;
+					g = c;
+					b = 0;
+				}
+				else if (h < 180) {
+					r = 0;
+					g = c;
+					b = x;
+				}
+				else if (h < 240) {
+					r = 0;
+					g = x;
+					b = c;
+				}
+				else if (h < 300) {
+					r = x;
+					g = 0;
+					b = c;
+				}
+				else {
+					r = c;
+					g = 0;
+					b = x;
+				}
+
+				r = normalize_rgb_value(r, m);
+				g = normalize_rgb_value(g, m);
+				b = normalize_rgb_value(b, m);
+
+				return rgbToHex(r,g,b);
+			}
+
+			function rgbToHex(r, g, b) {
+				return "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
+			}
+			
+			function normalize_rgb_value(color, m) {
+				color = Math.floor((color + m) * 255);
+				if (color < 0) {
+					color = 0;
+				}
+				return color;
+			}			
+		</script>
+	</body>
+</html>
